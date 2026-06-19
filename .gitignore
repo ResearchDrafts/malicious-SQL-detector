@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+
+# IDE files
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model artifacts (large files)
+artifacts/unixcoder/
+artifacts/minilm/
+artifacts/*.bin
+artifacts/*.safetensors
+artifacts/*.pt
+artifacts/*.pth
+
+# Training outputs
+checkpoints/
+runs/
+outputs/
+
+# Dataset files
+datasets/raw/
+datasets/processed/
+*.csv
+*.parquet
+
+# Hugging Face cache
+.cache/
+huggingface/
