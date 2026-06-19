@@ -38,10 +38,9 @@ checkpoints/
 runs/
 outputs/
 
-# Dataset files
+# Dataset files (but allow data/ folder)
 datasets/raw/
 datasets/processed/
-*.csv
 *.parquet
 
 # Hugging Face cache
