@@ -162,6 +162,7 @@ Return valid JSON only:
             malicious_reason = "benign request"
 
         confidence = float(data.get("confidence", 0))
+        # if confidence val > 100, then 100. if < 0 then 0
         confidence = max(0.0, min(100.0, confidence))
 
         return LLM_output(

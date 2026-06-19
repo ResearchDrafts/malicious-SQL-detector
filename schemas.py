@@ -48,6 +48,14 @@ class prediction:
     label: int
     confidence: float
 
+@dataclass
+class llm_feature:
+    vector: np.ndarray 
+
+@dataclass
+class combined_feature:
+    vector: np.ndarray   
+
 # full result of pipeline
 @dataclass
 class final_result:
