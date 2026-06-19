@@ -1,6 +1,6 @@
 # Pipeline
 
-![pipeline](pipeline.png)
+![pipeline](assets/pipeline.png)
 
 # Folder structure
 ```
@@ -8,7 +8,7 @@ root/
 ├── main.py
 ├── config.py
 ├── requirements.txt
-├── types.py
+├── schemas.py
 │
 ├── models/
 │   ├──      

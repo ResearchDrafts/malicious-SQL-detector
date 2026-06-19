@@ -2,7 +2,7 @@
 Python dataclasses for clarity
 '''
 from dataclasses import dataclass
-
+import numpy as np
 # prompt (from database)
 @dataclass
 class input_prompt:
@@ -36,6 +36,11 @@ class LLM_output:
     malicious: bool
     malicious_reason: str
     confidence: float
+
+@dataclass 
+class codebert_output: 
+    embedding: np.ndarray 
+    probability: float
 
 # output of final classifier
 @dataclass

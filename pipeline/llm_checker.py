@@ -8,7 +8,7 @@ Analyze the prompt + SQL query using Qwen and return a structured LLMOutput.
 import json
 import re
 import httpx
-from types import LLMOutput
+from schemas import LLM_output
 from config import max_char_limit, ollama_url, model
 
 SYSTEM_PROMPT = """
@@ -146,7 +146,7 @@ Return valid JSON only:
         response.raise_for_status()
         return response.json()["response"]
 
-    def parse_response(self, response: str) -> LLMOutput:
+    def parse_response(self, response: str) -> LLM_output:
         cleaned = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
         cleaned = re.sub(r"```json|```", "", cleaned).strip()
 
@@ -164,15 +164,15 @@ Return valid JSON only:
         confidence = float(data.get("confidence", 0))
         confidence = max(0.0, min(100.0, confidence))
 
-        return LLMOutput(
+        return LLM_output(
             ambiguous=bool(data.get("ambiguous", False)),
             ambiguity_reason=data.get("ambiguity_reason") or "",
             malicious=malicious,
             malicious_reason=malicious_reason,
-            confidence=confidence,  # stored as 0-100, normalize to 0-1 at feature construction
+            confidence=confidence,  # stored as 0-100, TODO normalize to 0-1 at feature construction
         )
 
-    def analyze(self, user_prompt: str, sql_query: str) -> LLMOutput:
+    def analyze(self, user_prompt: str, sql_query: str) -> LLM_output:
         prompt = self.build_prompt(user_prompt, sql_query)
 
         last_error = None
