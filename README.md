@@ -2,7 +2,7 @@
 
 ![pipeline](pipeline.png)
 
-# Folder struc
+# Folder structure
 ```
 root/
 ├── main.py
@@ -20,8 +20,11 @@ root/
 │   ├──
 │   ├──
 │   └── 
-└── artifacts/
-    ├──        
-    ├── 
-    └──           
+└── artifacts/ (not committed in this repo but locally stored)
+    ├──unixcoder
+    │  ├──config.json
+    │  ├──model.safetensors
+    │  ├──tokenizer_config.json
+    │  └──tokenizer.json     
+    ├──  
 ```
