@@ -9,9 +9,9 @@ model = "qwen3:4b"
 '''
 for codebert.py
 '''
-UNIXCODER_PATH=""
-DEVICE=""
-MAX_SQL_LENGTH=""
+UNIXCODER_PATH="./artifacts/unixcoder"
+DEVICE="cpu"
+MAX_SQL_LENGTH=512
 
 '''
 for encoder.py
@@ -51,3 +51,34 @@ INPUT_CSV = "./data/raw/multilingual_sql_security_dataset.csv"
 TRAIN_CSV = "./data/processed/security_train.csv"
 VAL_CSV = "./data/processed/security_val.csv"
 TEST_CSV = "./data/processed/security_test.csv"
+
+
+def validate_config(*, require_classifier: bool = False) -> None:
+    """
+    Validate configuration values needed by the model pipelines.
+
+    Args:
+        require_classifier: When True, also require the saved final
+            classifier checkpoint to exist. Training can set this to
+            False because it creates that checkpoint.
+    """
+    from pathlib import Path
+
+    if not DEVICE:
+        raise ValueError("DEVICE must be set, for example 'cpu' or 'cuda'.")
+
+    if not UNIXCODER_PATH:
+        raise ValueError("UNIXCODER_PATH must point to the UniXcoder model directory.")
+    if not Path(UNIXCODER_PATH).exists():
+        raise ValueError(f"UNIXCODER_PATH does not exist: {UNIXCODER_PATH}")
+
+    if not isinstance(MAX_SQL_LENGTH, int) or MAX_SQL_LENGTH <= 0:
+        raise ValueError("MAX_SQL_LENGTH must be a positive integer.")
+
+    if require_classifier:
+        if not FINAL_CLASSIFIER_PATH:
+            raise ValueError("FINAL_CLASSIFIER_PATH must point to trained MLP weights.")
+        if not Path(FINAL_CLASSIFIER_PATH).exists():
+            raise ValueError(
+                f"FINAL_CLASSIFIER_PATH does not exist: {FINAL_CLASSIFIER_PATH}"
+            )

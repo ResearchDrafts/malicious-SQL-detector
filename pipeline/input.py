@@ -1,21 +1,21 @@
 """
-Reads input prompts from CSV files and yields structured training_sample object (ie the prompt, query and label)
-Handles CSV parsing, validation, and error handling.
+CSV readers for the SQL security pipelines.
+
+Inference reads prompt-only rows as input_prompt objects.
+Training reads prompt, SQL query, and malicious label as training_sample
+objects. These workflows are intentionally separate.
 """
 
 from __future__ import annotations
 import csv
 from pathlib import Path
 from typing import Generator, Optional
-from schemas import training_sample
+from schemas import input_prompt, training_sample
 
 
 class InputReader:
     """
-    Reads CSV files and yields the training_sample object
-    Expected CSV format:
-        - Header row: 'prompt' (or similar column containing the SQL request)
-        - Data rows: one prompt per row
+    Reads CSV files for inference and training workflows.
     """
 
     def __init__(self, csv_path: str | Path) -> None:
@@ -62,7 +62,7 @@ class InputReader:
             "input",
         ]
 
-        normalized = {f.lower(): f for f in fieldnames}
+        normalized = {f.strip().lower(): f for f in fieldnames}
         for alias in prompt_aliases:
             if alias in normalized:
                 return normalized[alias]
@@ -87,12 +87,12 @@ class InputReader:
 
         sql_aliases = [
             "sql_query",
+            "sql query",
             "sql",
-            "SQL query",
             "query_sql",
         ]
 
-        normalized = {f.lower(): f for f in fieldnames}
+        normalized = {f.strip().lower(): f for f in fieldnames}
         for alias in sql_aliases:
             if alias in normalized:
                 return normalized[alias]
@@ -116,7 +116,7 @@ class InputReader:
             return None
 
         label_aliases = [
-            "Malicious or not",
+            "malicious or not",
             "malicious",
             "is_malicious",
             "label",
@@ -124,12 +124,47 @@ class InputReader:
             "class",
         ]
 
-        normalized = {f.lower(): f for f in fieldnames}
+        normalized = {f.strip().lower(): f for f in fieldnames}
         for alias in label_aliases:
             if alias in normalized:
                 return normalized[alias]
 
         return None
+
+    def read_prompts_test(self) -> Generator[input_prompt, None, None]:
+        """
+        Read prompt-only inference rows and yield input_prompt objects.
+
+        The CSV must contain a prompt-like column. SQL query and label
+        columns are ignored if present.
+        """
+        row_number = 1
+
+        try:
+            with open(self.csv_path, "r", encoding="utf-8") as csvfile:
+                reader = csv.DictReader(csvfile)
+
+                if not reader.fieldnames:
+                    raise ValueError("CSV file has no headers")
+
+                prompt_col = self.detect_prompt_column(reader.fieldnames)
+                if not prompt_col:
+                    raise ValueError(
+                        f"No prompt column detected. Available columns: {reader.fieldnames}"
+                    )
+
+                for row in reader:
+                    row_number += 1
+                    prompt_text = (row.get(prompt_col) or "").strip()
+                    if prompt_text:
+                        yield input_prompt(prompt=prompt_text)
+
+        except csv.Error as exc:
+            raise ValueError(f"CSV parsing error at row {row_number}: {exc}") from exc
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise ValueError(f"Error reading CSV file: {exc}") from exc
 
     def read_prompts_train(self) -> Generator[training_sample, None, None]:
         """
@@ -146,9 +181,6 @@ class InputReader:
         whitespace. Validates that all three required columns exist before
         iterating, that the malicious label can be converted to int, and
         that it is binary (0 or 1).
-
-        Args:
-            None
 
         Yields:
             training_sample objects (one per valid CSV row).
@@ -222,12 +254,13 @@ class InputReader:
         except Exception as exc:
             raise ValueError(f"Error reading CSV file: {exc}") from exc
         
-    def count_rows(self) -> int:
+    def count_rows(self, *, training: bool = False) -> int:
         """
-        Count the total number of valid (non-empty) rows in the CSV.
+        Count valid rows in the CSV.
 
         Args:
-            None
+            training: If True, count rows with prompt, SQL, and label.
+                If False, count prompt-only inference rows.
 
         Returns:
             Number of data rows (excluding header).
@@ -247,10 +280,25 @@ class InputReader:
                 if not prompt_col:
                     raise ValueError("No prompt column detected")
 
+                sql_col = None
+                label_col = None
+                if training:
+                    sql_col = self.detect_sql_column(reader.fieldnames)
+                    if not sql_col:
+                        raise ValueError("No SQL query column detected")
+                    label_col = self.detect_label_column(reader.fieldnames)
+                    if not label_col:
+                        raise ValueError("No malicious-label column detected")
+
                 for row in reader:
-                    prompt_text = row.get(prompt_col, "").strip()
-                    if prompt_text:
+                    prompt_text = (row.get(prompt_col) or "").strip()
+                    if not training and prompt_text:
                         count += 1
+                    elif training:
+                        sql_text = (row.get(sql_col) or "").strip()
+                        label_text = (row.get(label_col) or "").strip()
+                        if prompt_text and sql_text and label_text:
+                            count += 1
 
             return count
         except Exception as exc:

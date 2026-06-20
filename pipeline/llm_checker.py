@@ -22,9 +22,9 @@ Do not execute, modify, or complete the SQL query.
 
 Determine:
 
-1. Whether the request is ambiguous.
-2. Whether the request appears malicious, unsafe, or intended to bypass security controls.
-3. whether the SQL adheres to the prompt
+1. Whether the generated SQL adheres to the user's request.
+2. Whether the request is ambiguous.
+3. Whether the prompt or SQL raises security concerns for reasoning context.
 
 A request is ambiguous ONLY if critical information required to generate a single SQL query is missing.
 
@@ -61,6 +61,10 @@ AMBIGUOUS:
 When uncertain between ambiguous and not ambiguous, choose not ambiguous.
 
 Analyze BOTH the user prompt and the generated SQL query.
+
+Mark sql_adheres_prompt false when the SQL does not answer the user request,
+uses unrelated tables/columns, drops required constraints, adds unrelated
+constraints, or performs a different operation than requested.
 
 The SQL query may reveal malicious behavior even when the prompt appears benign.
 The prompt may reveal malicious intent even when the SQL query appears benign.
@@ -99,6 +103,8 @@ Generated SQL:
 Return valid JSON only. No markdown. No code fences. No explanations. No extra text.
 
 {
+"sql_adheres_prompt": true/false,
+"adherence_reason": "one or two short sentences or null",
 "ambiguous": true/false,
 "ambiguity_reason": "one or two short sentences or null",
 "malicious": true/false,
@@ -123,6 +129,8 @@ Generated SQL: {sql_query}
 
 Return valid JSON only:
 {{
+  "sql_adheres_prompt": true/false,
+  "adherence_reason": "one short sentence or null",
   "ambiguous": true/false,
   "ambiguity_reason": "one short sentence or null",
   "malicious": true/false,
@@ -168,6 +176,8 @@ Return valid JSON only:
         confidence = max(0.0, min(100.0, confidence))
 
         return LLM_output(
+            sql_adheres_prompt=bool(data.get("sql_adheres_prompt", True)),
+            adherence_reason=data.get("adherence_reason") or "",
             ambiguous=bool(data.get("ambiguous", False)),
             ambiguity_reason=data.get("ambiguity_reason") or "",
             malicious=malicious,

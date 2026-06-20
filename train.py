@@ -8,20 +8,28 @@ Usage:
 """
 
 from pathlib import Path
-import torch
 from torch.utils.data import DataLoader
 
-from models.MLP import SQLSecurityDataset, MLPClassifier, MLPTrainer, plot_confusion_matrix
+from config import DEVICE, TRAIN_CSV, VAL_CSV, TEST_CSV, FINAL_CLASSIFIER_PATH, validate_config
+from models.MLP import MLPClassifier
 from pipeline.codebert import UnixCoderEncoder
 from pipeline.llm_checker import LLMChecker
 from pipeline.encoder import FeatureEncoder
-from config import DEVICE, TRAIN_CSV, VAL_CSV, TEST_CSV, FINAL_CLASSIFIER_PATH
+from training.dataset import SQLSecurityDataset
+from training.trainer import MLPTrainer
+from training.visualization import plot_confusion_matrix
 
 
 def main():
     """
     Main training pipeline.
     """
+    try:
+        validate_config(require_classifier=False)
+    except Exception as exc:
+        print(f"Configuration error: {exc}")
+        return
+
     device = DEVICE if DEVICE else "cpu"
     print(f"Using device: {device}")
 
@@ -38,13 +46,25 @@ def main():
     print("\n=== Loading Datasets ===")
     try:
         train_dataset = SQLSecurityDataset(
-            TRAIN_CSV, codebert_encoder, llm_checker, feature_encoder
+            TRAIN_CSV,
+            codebert_encoder,
+            llm_checker,
+            feature_encoder,
+            cache_path="./artifacts/feature_cache/train_features.npz",
         )
         val_dataset = SQLSecurityDataset(
-            VAL_CSV, codebert_encoder, llm_checker, feature_encoder
+            VAL_CSV,
+            codebert_encoder,
+            llm_checker,
+            feature_encoder,
+            cache_path="./artifacts/feature_cache/val_features.npz",
         )
         test_dataset = SQLSecurityDataset(
-            TEST_CSV, codebert_encoder, llm_checker, feature_encoder
+            TEST_CSV,
+            codebert_encoder,
+            llm_checker,
+            feature_encoder,
+            cache_path="./artifacts/feature_cache/test_features.npz",
         )
         
         print(f"Train set: {len(train_dataset)} samples")

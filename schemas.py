@@ -44,6 +44,8 @@ class LLM_output:
     malicious_reason: str
     confidence: float
     raw_response: str
+    sql_adheres_prompt: bool = True
+    adherence_reason: str = ""
 
 @dataclass 
 class codebert_output: 
