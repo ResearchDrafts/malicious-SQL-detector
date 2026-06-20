@@ -8,6 +8,13 @@ import numpy as np
 class input_prompt:
     prompt : str
 
+# training_sample is data extracted from the Dataset
+@dataclass
+class training_sample:
+    prompt: str
+    sql_query: str
+    malicious: int
+
 # Output of text_to_sql
 @dataclass
 class sql_result:

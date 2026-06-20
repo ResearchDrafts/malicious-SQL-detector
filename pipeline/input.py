@@ -1,5 +1,5 @@
 """
-Reads input prompts from CSV files and yields structured input_prompt objects.
+Reads input prompts from CSV files and yields structured training_sample object (ie the prompt, query and label)
 Handles CSV parsing, validation, and error handling.
 """
 
@@ -7,12 +7,12 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 from typing import Generator, Optional
-from schemas import input_prompt
+from schemas import training_sample
 
 
 class InputReader:
     """
-    Reads CSV files and yields input_prompt objects.
+    Reads CSV files and yields the training_sample object
     Expected CSV format:
         - Header row: 'prompt' (or similar column containing the SQL request)
         - Data rows: one prompt per row
@@ -42,7 +42,7 @@ class InputReader:
         Detect the prompt column name from CSV header.
 
         Searches for common variations: 'prompt', 'Prompt', 'PROMPT',
-        'query', 'Query', 'text', 'Text', etc.
+        'query', 'Query', 'text', 'Text', etc. Matching is case-insensitive.
 
         Args:
             fieldnames: List of column names from CSV header.
@@ -55,44 +55,111 @@ class InputReader:
 
         prompt_aliases = [
             "prompt",
-            "Prompt",
-            "PROMPT",
             "prompt_entered",
             "query",
-            "Query",
-            "QUERY",
             "text",
-            "Text",
-            "TEXT",
             "request",
-            "Request",
-            "REQUEST",
             "input",
-            "Input",
-            "INPUT",
         ]
 
+        normalized = {f.lower(): f for f in fieldnames}
         for alias in prompt_aliases:
-            if alias in fieldnames:
-                return alias
+            if alias in normalized:
+                return normalized[alias]
 
         return None
 
-    def read_prompts(self) -> Generator[input_prompt, None, None]:
+    def detect_sql_column(self, fieldnames: list[str]) -> Optional[str]:
         """
-        Read CSV file and yield input_prompt objects for each row.
+        Detect the SQL query column name from CSV header.
 
-        Skips empty rows and validates that the prompt column exists.
+        Searches for common variations: 'sql_query', 'sql', 'query_sql',
+        etc. Matching is case-insensitive.
+
+        Args:
+            fieldnames: List of column names from CSV header.
+
+        Returns:
+            Column name containing SQL queries, or None if not found.
+        """
+        if not fieldnames:
+            return None
+
+        sql_aliases = [
+            "sql_query",
+            "sql",
+            "SQL query",
+            "query_sql",
+        ]
+
+        normalized = {f.lower(): f for f in fieldnames}
+        for alias in sql_aliases:
+            if alias in normalized:
+                return normalized[alias]
+
+        return None
+
+    def detect_label_column(self, fieldnames: list[str]) -> Optional[str]:
+        """
+        Detect the malicious-label column name from CSV header.
+
+        Searches for common variations: 'malicious', 'is_malicious',
+        'label', 'target', 'class', etc. Matching is case-insensitive.
+
+        Args:
+            fieldnames: List of column names from CSV header.
+
+        Returns:
+            Column name containing malicious labels, or None if not found.
+        """
+        if not fieldnames:
+            return None
+
+        label_aliases = [
+            "Malicious or not",
+            "malicious",
+            "is_malicious",
+            "label",
+            "target",
+            "class",
+        ]
+
+        normalized = {f.lower(): f for f in fieldnames}
+        for alias in label_aliases:
+            if alias in normalized:
+                return normalized[alias]
+
+        return None
+
+    def read_prompts_train(self) -> Generator[training_sample, None, None]:
+        """
+        Read CSV file and yield training_sample objects for each row.
+
+        Expected CSV format:
+            - Header row containing a prompt column, a SQL query column,
+            and a malicious-label column (see detect_prompt_column,
+            detect_sql_column, and detect_label_column for accepted
+            aliases; matching is case-insensitive).
+            - Data rows: one (prompt, sql_query, malicious) triple per row.
+
+        Skips rows where any required field is empty after stripping
+        whitespace. Validates that all three required columns exist before
+        iterating, that the malicious label can be converted to int, and
+        that it is binary (0 or 1).
 
         Args:
             None
 
         Yields:
-            input_prompt objects (one per CSV row).
+            training_sample objects (one per valid CSV row).
 
         Raises:
-            ValueError: if the prompt column cannot be detected or CSV is malformed.
+            ValueError: if the prompt, SQL, or label column cannot be
+                detected, if the CSV is malformed, if a malicious label
+                cannot be converted to int, or if it is not 0 or 1.
         """
+        row_number = 1
+
         try:
             with open(self.csv_path, "r", encoding="utf-8") as csvfile:
                 reader = csv.DictReader(csvfile)
@@ -106,45 +173,55 @@ class InputReader:
                         f"No prompt column detected. Available columns: {reader.fieldnames}"
                     )
 
-                row_number = 1
+                sql_col = self.detect_sql_column(reader.fieldnames)
+                if not sql_col:
+                    raise ValueError(
+                        f"No SQL query column detected. Available columns: {reader.fieldnames}"
+                    )
+
+                label_col = self.detect_label_column(reader.fieldnames)
+                if not label_col:
+                    raise ValueError(
+                        f"No malicious-label column detected. Available columns: {reader.fieldnames}"
+                    )
+
                 for row in reader:
                     row_number += 1
-                    prompt_text = row.get(prompt_col, "").strip()
 
-                    if not prompt_text:
+                    prompt_text = (row.get(prompt_col) or "").strip()
+                    sql_text = (row.get(sql_col) or "").strip()
+                    label_text = (row.get(label_col) or "").strip()
+
+                    if not prompt_text or not sql_text or not label_text:
                         continue
 
-                    yield input_prompt(prompt=prompt_text)
+                    try:
+                        malicious_label = int(label_text)
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError(
+                            f"Invalid malicious label at row {row_number}: "
+                            f"{label_text!r} could not be converted to int"
+                        ) from exc
+
+                    if malicious_label not in (0, 1):
+                        raise ValueError(
+                            f"Invalid malicious label at row {row_number}: "
+                            f"expected 0 or 1, got {malicious_label}"
+                        )
+
+                    yield training_sample(
+                        prompt=prompt_text,
+                        sql_query=sql_text,
+                        malicious=malicious_label,
+                    )
 
         except csv.Error as exc:
             raise ValueError(f"CSV parsing error at row {row_number}: {exc}") from exc
+        except ValueError:
+            raise
         except Exception as exc:
             raise ValueError(f"Error reading CSV file: {exc}") from exc
-
-    # def read_prompts_from_list(
-    #     self, prompts: list[str]
-    # ) -> Generator[input_prompt, None, None]:
-    #     """
-    #     Yield input_prompt objects from a list of prompt strings.
-
-    #     Useful for in-memory test data without reading from CSV.
-
-    #     Args:
-    #         prompts: List of prompt strings.
-
-    #     Yields:
-    #         input_prompt objects.
-
-    #     Raises:
-    #         ValueError: if the list is empty.
-    #     """
-    #     if not prompts:
-    #         raise ValueError("Prompts list cannot be empty")
-
-    #     for prompt_text in prompts:
-    #         if isinstance(prompt_text, str) and prompt_text.strip():
-    #             yield input_prompt(prompt=prompt_text.strip())
-
+        
     def count_rows(self) -> int:
         """
         Count the total number of valid (non-empty) rows in the CSV.
