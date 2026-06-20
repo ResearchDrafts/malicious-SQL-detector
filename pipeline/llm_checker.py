@@ -99,9 +99,9 @@ Return valid JSON only. No markdown. No code fences. No explanations. No extra t
 
 {
 "ambiguous": true/false,
-"ambiguity_reason": "one short sentence or null",
+"ambiguity_reason": "one or two short sentences or null",
 "malicious": true/false,
-"malicious_reason": "one short sentence or null",
+"malicious_reason": "one or two short sentences or null",
 "confidence": 0-100
 }
 """
@@ -147,6 +147,8 @@ Return valid JSON only:
         return response.json()["response"]
 
     def parse_response(self, response: str) -> LLM_output:
+        raw_response = response
+
         cleaned = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
         cleaned = re.sub(r"```json|```", "", cleaned).strip()
 
@@ -162,7 +164,6 @@ Return valid JSON only:
             malicious_reason = "benign request"
 
         confidence = float(data.get("confidence", 0))
-        # if confidence val > 100, then 100. if < 0 then 0
         confidence = max(0.0, min(100.0, confidence))
 
         return LLM_output(
@@ -170,7 +171,8 @@ Return valid JSON only:
             ambiguity_reason=data.get("ambiguity_reason") or "",
             malicious=malicious,
             malicious_reason=malicious_reason,
-            confidence=confidence,  # stored as 0-100, TODO normalize to 0-1 at feature construction
+            confidence=confidence,
+            raw_response=raw_response,
         )
 
     def analyze(self, user_prompt: str, sql_query: str) -> LLM_output:

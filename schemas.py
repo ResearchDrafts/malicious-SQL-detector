@@ -43,6 +43,7 @@ class LLM_output:
     malicious: bool
     malicious_reason: str
     confidence: float
+    raw_response: str
 
 @dataclass 
 class codebert_output: 
