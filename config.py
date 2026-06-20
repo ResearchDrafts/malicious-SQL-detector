@@ -1,16 +1,25 @@
 '''
 for llm_checker.py
 '''
+import torch
+
 # This is to prevent very large prompts or queries from being passed
 max_char_limit = 2048
-ollama_url = "http://localhost:11434/api/generate"
-model = "qwen3:4b"
+QWEN_MODEL_NAME = "Qwen/Qwen3-4B"
+QWEN_MAX_NEW_TOKENS = 512
+QWEN_ENABLE_THINKING = False
+# Four-bit loading keeps Qwen practical on common Colab GPUs. It is
+# automatically disabled when CUDA is unavailable.
+QWEN_LOAD_IN_4BIT = True
+QWEN_GENERATION_KWARGS = {
+    "do_sample": False,
+}
 
 '''
 for codebert.py
 '''
 UNIXCODER_PATH="./artifacts/unixcoder"
-DEVICE="cpu"
+DEVICE="cuda" if torch.cuda.is_available() else "cpu"
 MAX_SQL_LENGTH=512
 
 '''
@@ -74,6 +83,11 @@ def validate_config(*, require_classifier: bool = False) -> None:
 
     if not isinstance(MAX_SQL_LENGTH, int) or MAX_SQL_LENGTH <= 0:
         raise ValueError("MAX_SQL_LENGTH must be a positive integer.")
+
+    if not QWEN_MODEL_NAME:
+        raise ValueError("QWEN_MODEL_NAME must identify a Hugging Face model.")
+    if not isinstance(QWEN_MAX_NEW_TOKENS, int) or QWEN_MAX_NEW_TOKENS <= 0:
+        raise ValueError("QWEN_MAX_NEW_TOKENS must be a positive integer.")
 
     if require_classifier:
         if not FINAL_CLASSIFIER_PATH:

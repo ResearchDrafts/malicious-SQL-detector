@@ -7,9 +7,18 @@ Analyze the prompt + SQL query using Qwen and return a structured LLMOutput.
 
 import json
 import re
-import httpx
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
 from schemas import LLM_output
-from config import max_char_limit, ollama_url, model
+from config import (
+    QWEN_ENABLE_THINKING,
+    QWEN_GENERATION_KWARGS,
+    QWEN_LOAD_IN_4BIT,
+    QWEN_MAX_NEW_TOKENS,
+    QWEN_MODEL_NAME,
+    max_char_limit,
+)
 
 SYSTEM_PROMPT = """
 You are a SQL security and validation assistant.
@@ -116,6 +125,32 @@ Return valid JSON only. No markdown. No code fences. No explanations. No extra t
 class LLMChecker:
     def __init__(self, max_retries: int = 2):
         self.max_retries = max_retries
+        self.tokenizer = AutoTokenizer.from_pretrained(QWEN_MODEL_NAME)
+
+        model_kwargs = {
+            "device_map": "auto",
+            "torch_dtype": "auto",
+            "low_cpu_mem_usage": True,
+        }
+        if QWEN_LOAD_IN_4BIT and torch.cuda.is_available():
+            compute_dtype = (
+                torch.bfloat16
+                if torch.cuda.is_bf16_supported()
+                else torch.float16
+            )
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=compute_dtype,
+            )
+
+        self.model = AutoModelForCausalLM.from_pretrained(
+            QWEN_MODEL_NAME,
+            **model_kwargs,
+        )
+        self.model.eval()
+
     def build_prompt(self, user_prompt: str, sql_query: str) -> str:
         if len(user_prompt + sql_query) > max_char_limit:
             raise ValueError(
@@ -139,21 +174,33 @@ Return valid JSON only:
 }}"""
 
     def invoke_llm(self, prompt: str) -> str:
-        response = httpx.post(
-            ollama_url,
-            json={
-                "model": model,
-                "prompt": prompt,
-                "stream": False,
-                "thinking": False,
-                "options": {
-                    "temperature": 0
-                },
-            },
-            timeout=60,
+        messages = [{"role": "user", "content": prompt}]
+        formatted_prompt = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=QWEN_ENABLE_THINKING,
         )
-        response.raise_for_status()
-        return response.json()["response"]
+        model_inputs = self.tokenizer(
+            [formatted_prompt],
+            return_tensors="pt",
+        ).to(self.model.device)
+
+        generation_kwargs = dict(QWEN_GENERATION_KWARGS)
+        generation_kwargs["max_new_tokens"] = QWEN_MAX_NEW_TOKENS
+        generation_kwargs["pad_token_id"] = self.tokenizer.eos_token_id
+
+        with torch.no_grad():
+            generated_ids = self.model.generate(
+                **model_inputs,
+                **generation_kwargs,
+            )
+
+        output_ids = generated_ids[0, model_inputs.input_ids.shape[1]:]
+        return self.tokenizer.decode(
+            output_ids,
+            skip_special_tokens=True,
+        ).strip()
 
     def parse_response(self, response: str) -> LLM_output:
         raw_response = response
@@ -197,8 +244,8 @@ Return valid JSON only:
             except json.JSONDecodeError as e:
                 last_error = e
                 prompt += "\n\nRespond in valid JSON only. No extra text."
-            except httpx.HTTPError as e:
-                raise RuntimeError(f"LLM request failed: {e}") from e
+            except (RuntimeError, ValueError) as e:
+                raise RuntimeError(f"Qwen generation failed: {e}") from e
 
         raise ValueError(
             f"Failed to parse LLM response after {self.max_retries} attempts: {last_error}"
