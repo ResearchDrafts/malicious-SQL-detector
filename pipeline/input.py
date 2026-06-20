@@ -13,7 +13,6 @@ from schemas import input_prompt
 class InputReader:
     """
     Reads CSV files and yields input_prompt objects.
-
     Expected CSV format:
         - Header row: 'prompt' (or similar column containing the SQL request)
         - Data rows: one prompt per row
@@ -58,6 +57,7 @@ class InputReader:
             "prompt",
             "Prompt",
             "PROMPT",
+            "prompt_entered",
             "query",
             "Query",
             "QUERY",
@@ -121,29 +121,29 @@ class InputReader:
         except Exception as exc:
             raise ValueError(f"Error reading CSV file: {exc}") from exc
 
-    def read_prompts_from_list(
-        self, prompts: list[str]
-    ) -> Generator[input_prompt, None, None]:
-        """
-        Yield input_prompt objects from a list of prompt strings.
+    # def read_prompts_from_list(
+    #     self, prompts: list[str]
+    # ) -> Generator[input_prompt, None, None]:
+    #     """
+    #     Yield input_prompt objects from a list of prompt strings.
 
-        Useful for in-memory test data without reading from CSV.
+    #     Useful for in-memory test data without reading from CSV.
 
-        Args:
-            prompts: List of prompt strings.
+    #     Args:
+    #         prompts: List of prompt strings.
 
-        Yields:
-            input_prompt objects.
+    #     Yields:
+    #         input_prompt objects.
 
-        Raises:
-            ValueError: if the list is empty.
-        """
-        if not prompts:
-            raise ValueError("Prompts list cannot be empty")
+    #     Raises:
+    #         ValueError: if the list is empty.
+    #     """
+    #     if not prompts:
+    #         raise ValueError("Prompts list cannot be empty")
 
-        for prompt_text in prompts:
-            if isinstance(prompt_text, str) and prompt_text.strip():
-                yield input_prompt(prompt=prompt_text.strip())
+    #     for prompt_text in prompts:
+    #         if isinstance(prompt_text, str) and prompt_text.strip():
+    #             yield input_prompt(prompt=prompt_text.strip())
 
     def count_rows(self) -> int:
         """
