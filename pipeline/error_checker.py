@@ -4,6 +4,8 @@ Consumes parsed AST from parser.py and checks for common issues.
 """
 
 from __future__ import annotations
+from ast import pattern
+from ast import pattern
 import re
 from schemas import parser_result, error_check_result
 
@@ -132,7 +134,8 @@ class SQLErrorChecker:
         dml_type = ast.get("dml_type", "").upper()
 
         for keyword in self.dangerous_keywords:
-            if keyword in statement:
+            pattern = rf"\b{re.escape(keyword)}\b"
+            if re.search(pattern, statement, re.IGNORECASE):
                 errors.append(f"Dangerous keyword '{keyword}' detected in query")
 
         if "--" in statement or "/*" in statement:

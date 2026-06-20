@@ -127,7 +127,8 @@ class TextToSQLGenerator:
         """
         Extract the SQL query portion from the generated text.
 
-        Removes the system instruction prefix to isolate the SQL query.
+        Removes prompt echoes, markdown formatting, and common explanatory
+        text while preserving the generated SQL statements.
 
         Args:
             generated_text: Full text output from generate().
@@ -136,22 +137,53 @@ class TextToSQLGenerator:
         Returns:
             Extracted SQL query string.
         """
+
         instruction = (
             "You are a SQL expert. Generate a SQL query based on the user's request. "
             "Return ONLY the SQL query, no explanation.\n\n"
             "User request: "
         )
 
+        # Remove instruction if model echoed it back
         if instruction in generated_text:
             idx = generated_text.find(instruction) + len(instruction)
             sql_part = generated_text[idx:].strip()
         else:
             sql_part = generated_text.strip()
 
+        # Remove prompt echo if present
         sql_part = sql_part.replace(original_prompt, "").strip()
 
-        lines = [line.strip() for line in sql_part.split("\n") if line.strip()]
-        sql_query = " ".join(lines)
+        # Remove markdown fences
+        sql_part = sql_part.replace("```sql", "")
+        sql_part = sql_part.replace("```SQL", "")
+        sql_part = sql_part.replace("```", "")
+        sql_part = sql_part.strip()
+
+        cleaned_lines = []
+
+        stop_phrases = (
+            "this query",
+            "the query",
+            "explanation",
+            "note:",
+            "here is",
+            "sql query:",
+            "query:",
+        )
+
+        for line in sql_part.splitlines():
+            line = line.strip()
+
+            if not line:
+                continue
+
+            if line.lower().startswith(stop_phrases):
+                break
+
+            cleaned_lines.append(line)
+
+        sql_query = " ".join(cleaned_lines).strip()
 
         return sql_query
 

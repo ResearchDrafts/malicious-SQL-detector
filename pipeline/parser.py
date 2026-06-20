@@ -38,9 +38,12 @@ class SQLParser:
             return []
 
         parsed = sqlparse.parse(sql_query)
-        if parsed:
-            return list(parsed[0].tokens)
-        return []
+
+        all_tokens = []
+        for stmt in parsed:
+            all_tokens.extend(stmt.tokens)
+
+        return all_tokens
 
     def validate_basic_structure(self, tokens: list) -> tuple[bool, Optional[str]]:
         """

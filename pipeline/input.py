@@ -76,7 +76,7 @@ class InputReader:
             if alias in fieldnames:
                 return alias
 
-        return fieldnames[0] if fieldnames else None
+        return None
 
     def read_prompts(self) -> Generator[input_prompt, None, None]:
         """

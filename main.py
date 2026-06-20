@@ -22,6 +22,8 @@ from pipeline.encoder import FeatureEncoder
 from pipeline.final_classifier import FinalClassifier
 from schemas import final_result, input_prompt
 
+INPUT_CSV = "./data/raw/multilingual_sql_security_dataset.csv"
+
 
 class MaliciousSQLDetectorPipeline:
     """
@@ -168,18 +170,11 @@ def main() -> None:
     Entry point for the pipeline. Accepts CSV file path as argument.
 
     Usage:
-        python main.py <path_to_csv>
+        python main.py [path_to_csv]
 
     Outputs results to stdout and errors to stderr.
     """
-    if len(sys.argv) < 2:
-        print(
-            "Usage: python main.py <path_to_csv>",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    csv_path = sys.argv[1]
+    csv_path = sys.argv[1] if len(sys.argv) > 1 else INPUT_CSV
 
     try:
         pipeline = MaliciousSQLDetectorPipeline()
