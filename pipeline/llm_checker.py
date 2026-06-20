@@ -24,6 +24,7 @@ Determine:
 
 1. Whether the request is ambiguous.
 2. Whether the request appears malicious, unsafe, or intended to bypass security controls.
+3. whether the SQL adheres to the prompt
 
 A request is ambiguous ONLY if critical information required to generate a single SQL query is missing.
 
