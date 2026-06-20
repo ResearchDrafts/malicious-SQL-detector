@@ -2,7 +2,7 @@
 final_classifier.py
 
 Final stage of the SQL Security pipeline. Consumes a combined_feature
-(1156-d vector produced by encoder.FeatureEncoder) and produces a
+(1152-d vector produced by encoder.FeatureEncoder) and produces a
 prediction (label + confidence) indicating whether the underlying SQL
 query is malicious.
 
@@ -32,11 +32,11 @@ from config import EXPECTED_FEATURE_DIM, FINAL_CLASSIFIER_PATH, DEVICE
 
 class MLPClassifier(nn.Module):
     """
-    Small feed-forward network mapping a 1156-d combined_feature vector
+    Small feed-forward network mapping a 1152-d combined_feature vector
     to a single malicious-probability score in [0, 1].
 
     Architecture:
-        Linear(1156, 256) -> ReLU
+        Linear(1152, 256) -> ReLU
         Linear(256, 64)   -> ReLU -> Dropout(0.2)
         Linear(64, 1)     (raw logit; apply torch.sigmoid() at inference)
 
@@ -50,7 +50,7 @@ class MLPClassifier(nn.Module):
         """
         Args:
             input_dim: Dimensionality of the input feature vector.
-                Defaults to EXPECTED_FEATURE_DIM (1156) from config.py.
+                Defaults to EXPECTED_FEATURE_DIM (1152) from config.py.
         """
         super().__init__()
         self.net = nn.Sequential(
@@ -126,13 +126,13 @@ class FinalClassifier:
         tensor.
 
         Args:
-            feature: combined_feature with .vector of shape (1156,).
+            feature: combined_feature with .vector of shape (1152,).
 
         Returns:
-            torch.FloatTensor of shape (1, 1156), moved to self.device.
+            torch.FloatTensor of shape (1, 1152), moved to self.device.
 
         Raises:
-            ValueError: if feature.vector does not have shape (1156,).
+            ValueError: if feature.vector does not have shape (1152,).
         """
         vector = np.asarray(feature.vector, dtype=np.float32).reshape(-1)
 
@@ -154,7 +154,7 @@ class FinalClassifier:
         with nn.BCEWithLogitsLoss().
 
         Args:
-            feature: combined_feature with .vector of shape (1156,).
+            feature: combined_feature with .vector of shape (1152,).
 
         Returns:
             float in [0.0, 1.0]: probability that the SQL query is
@@ -173,7 +173,7 @@ class FinalClassifier:
         Classify a combined_feature as malicious (1) or benign (0).
 
         Args:
-            feature: combined_feature with .vector of shape (1156,).
+            feature: combined_feature with .vector of shape (1152,).
 
         Returns:
             prediction(label=0 or 1, confidence=probability), where

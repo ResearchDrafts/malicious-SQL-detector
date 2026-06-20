@@ -19,13 +19,11 @@ for encoder.py
 # Dimensionality constants (documented and enforced).
 UNIXCODER_EMBEDDING_DIM = 768
 MINILM_EMBEDDING_DIM = 384
-SCALAR_FEATURE_COUNT = 4  # probability, malicious flag, ambiguous flag, confidence
 EXPECTED_FEATURE_DIM = (
-    UNIXCODER_EMBEDDING_DIM + MINILM_EMBEDDING_DIM + SCALAR_FEATURE_COUNT
-)  # 1156
+    UNIXCODER_EMBEDDING_DIM + MINILM_EMBEDDING_DIM
+)  # 1152
 
 MINILM_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-
 '''
 for text_to_sql.py
 '''

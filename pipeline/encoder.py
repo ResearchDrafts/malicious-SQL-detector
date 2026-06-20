@@ -1,8 +1,8 @@
 """
 encoder.py
 
-FeatureEncoder: combines LLM_output (Qwen reasoning) and codebert_output
-(UniXcoder embedding + probability) into a single 1156-dimensional
+FeatureEncoder: combines codebert_output (UniXcoder embedding) and
+LLM_output (Qwen raw reasoning) into a single 1152-dimensional
 combined_feature vector for the final classifier.
 
 Pipeline:
@@ -17,14 +17,16 @@ Pipeline:
          v
     combined_feature
 
-Feature layout (1156-d total):
+Feature layout (1152-d total):
 
     768  UniXcoder embedding              (codebert_output.embedding)
-    384  MiniLM embedding of LLM reasoning (build_reason_text -> encode_reason)
-      1  UniXcoder malicious probability  (codebert_output.probability)
-      1  Qwen malicious flag              (int(llm_output.malicious))
-      1  Qwen ambiguous flag              (int(llm_output.ambiguous))
-      1  Qwen confidence (normalized)     (llm_output.confidence / 100.0)
+    384  MiniLM embedding of Qwen's raw reasoning text (build_reason_text -> encode_reason)
+
+This is a pure embedding-fusion design: no scalar decision features
+(UniXcoder probability, Qwen malicious/ambiguous flags, Qwen
+confidence) are included, since those are model predictions rather
+than semantic representations. The final classifier learns directly
+from the embeddings themselves.
 
 This module performs ONLY feature encoding. It does not call Qwen, does
 not load UniXcoder, does not parse SQL, and does not perform final
@@ -34,8 +36,8 @@ classification.
 from __future__ import annotations
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from schemas import LLM_output, codebert_output, combined_feature
-from config import DEVICE, UNIXCODER_EMBEDDING_DIM, MINILM_EMBEDDING_DIM, SCALAR_FEATURE_COUNT, EXPECTED_FEATURE_DIM, MINILM_MODEL_NAME 
+from schemas import LLM_output, codebert_output, llm_feature, combined_feature
+from config import DEVICE, UNIXCODER_EMBEDDING_DIM, MINILM_EMBEDDING_DIM, EXPECTED_FEATURE_DIM, MINILM_MODEL_NAME
 
 class FeatureEncoder:
     """
@@ -60,37 +62,45 @@ class FeatureEncoder:
         else:
             self.minilm = SentenceTransformer(MINILM_MODEL_NAME)
 
-    def build_reason_text(self, llm_output: LLM_output) -> str:
+    def build_llm_feature(self, reason_embedding: np.ndarray) -> llm_feature:
         """
-        Construct a single reasoning text string from the LLM_output's
-        malicious_reason and ambiguity_reason fields.
-
-        Format (one line per present reason):
-            "Malicious: <malicious_reason>"
-            "Ambiguous: <ambiguity_reason>"
-
-        If both reasons are empty/falsy, returns "benign request".
+        Wrap a MiniLM reasoning embedding into an llm_feature object.
 
         Args:
-            llm_output: LLM_output produced by LLMChecker.
+            reason_embedding: MiniLM embedding from encode_reason(),
+                shape (384,).
 
         Returns:
-            A single string summarizing the LLM's reasoning.
+            llm_feature wrapping the (384,) np.ndarray embedding.
         """
-        lines: list[str] = []
+        return llm_feature(vector=reason_embedding)
+    
+    def build_reason_text(self, llm_output: LLM_output) -> str:
+        """
+        Extract the reasoning text to embed with MiniLM.
 
-        malicious_reason = (llm_output.malicious_reason or "").strip()
-        ambiguity_reason = (llm_output.ambiguity_reason or "").strip()
+        Uses llm_output.raw_response (Qwen's original, unparsed
+        response text) directly as the semantic reasoning signal,
+        rather than reconstructing a synthetic summary from
+        malicious_reason/ambiguity_reason. This preserves the full
+        nuance of Qwen's reasoning instead of collapsing it into two
+        short fields.
 
-        if malicious_reason:
-            lines.append(f"Malicious: {malicious_reason}")
-        if ambiguity_reason:
-            lines.append(f"Ambiguous: {ambiguity_reason}")
+        Args:
+            llm_output: LLM_output produced by LLMChecker, containing
+                raw_response (Qwen's original output text).
 
-        if not lines:
+        Returns:
+            The stripped raw_response string, or "benign request" if
+            raw_response is empty, whitespace-only, or missing.
+        """
+        raw_response = (llm_output.raw_response or "").strip()
+
+        if not raw_response:
             return "benign request"
 
-        return "\n".join(lines)
+        else:
+            raise ValueError("Qwen returned empty reasoning response")
 
     def encode_reason(self, reason_text: str) -> np.ndarray:
         """
@@ -120,37 +130,37 @@ class FeatureEncoder:
     def build_feature_vector(
         self,
         codebert_output: codebert_output,
-        llm_output: LLM_output,
-        reason_embedding: np.ndarray,
+        llm_feature_obj: llm_feature,
     ) -> np.ndarray:
         """
-        Concatenate all feature components into a single 1156-d vector.
+        Concatenate embedding components into a single 1152-d vector.
 
         Layout:
             [0:768]    codebert_output.embedding (UniXcoder CLS embedding)
-            [768:1152] reason_embedding (MiniLM embedding of LLM reasoning)
-            [1152]     codebert_output.probability (UniXcoder malicious prob)
-            [1153]     int(llm_output.malicious)   (Qwen malicious flag)
-            [1154]     int(llm_output.ambiguous)   (Qwen ambiguous flag)
-            [1155]     llm_output.confidence clipped to [0,100] then /100.0
+            [768:1152] llm_feature_obj.vector (MiniLM embedding of Qwen's raw reasoning text)
+
+        This is a pure embedding-fusion vector. No scalar decision
+        features (probability, malicious flag, ambiguous flag,
+        confidence) are included.
 
         Args:
             codebert_output: Output from UnixCoderEncoder.encode().
-            llm_output: Output from LLMChecker.analyze().
-            reason_embedding: MiniLM embedding from encode_reason(),
-                shape (384,).
+            llm_feature_obj: llm_feature produced by build_llm_feature(),
+                wrapping a (384,) MiniLM reasoning embedding.
 
         Returns:
-            np.ndarray of shape (1156,), dtype float32.
+            np.ndarray of shape (1152,), dtype float32.
 
         Raises:
             ValueError: if the resulting vector does not have shape
-                (1156,).
+                (1152,).
         """
         unixcoder_embedding = np.asarray(
             codebert_output.embedding, dtype=np.float32
         ).reshape(-1)
-        reason_embedding = np.asarray(reason_embedding, dtype=np.float32).reshape(-1)
+        reason_embedding = np.asarray(
+            llm_feature_obj.vector, dtype=np.float32
+        ).reshape(-1)
 
         if unixcoder_embedding.shape[0] != UNIXCODER_EMBEDDING_DIM:
             raise ValueError(
@@ -165,27 +175,8 @@ class FeatureEncoder:
                 f"{reason_embedding.shape[0]}"
             )
 
-        probability = float(codebert_output.probability)
-        if not 0.0 <= probability <= 1.0:
-            raise ValueError(
-                f"codebert_output.probability out of expected range [0,1]: "
-                f"{probability}"
-            )
-
-        confidence = max(0.0, min(100.0, float(llm_output.confidence))) / 100.0
-
-        scalars = np.array(
-            [
-                probability,
-                float(int(llm_output.malicious)),
-                float(int(llm_output.ambiguous)),
-                confidence,
-            ],
-            dtype=np.float32,
-        )
-
         feature_vector = np.concatenate(
-            [unixcoder_embedding, reason_embedding, scalars]
+            [unixcoder_embedding, reason_embedding]
         )
 
         if feature_vector.shape[0] != EXPECTED_FEATURE_DIM:
@@ -205,20 +196,22 @@ class FeatureEncoder:
         """
         Run the full feature-encoding pipeline:
 
-            build_reason_text -> encode_reason -> build_feature_vector
+            build_reason_text -> encode_reason -> build_llm_feature
+            -> build_feature_vector
 
         Args:
             codebert_output: Output from UnixCoderEncoder.encode().
             llm_output: Output from LLMChecker.analyze().
 
         Returns:
-            combined_feature wrapping a (1156,) np.ndarray, ready to be
+            combined_feature wrapping a (1152,) np.ndarray, ready to be
             passed to the final classifier.
         """
         reason_text = self.build_reason_text(llm_output)
         reason_embedding = self.encode_reason(reason_text)
+        llm_feature_obj = self.build_llm_feature(reason_embedding)
         feature_vector = self.build_feature_vector(
-            codebert_output, llm_output, reason_embedding
+            codebert_output, llm_feature_obj
         )
 
         return combined_feature(vector=feature_vector)
