@@ -91,16 +91,17 @@ class FeatureEncoder:
                 raw_response (Qwen's original output text).
 
         Returns:
-            The stripped raw_response string, or "benign request" if
-            raw_response is empty, whitespace-only, or missing.
+            The stripped raw_response string.
+
+        Raises:
+            ValueError: if Qwen returned no usable raw response.
         """
-        raw_response = (llm_output.raw_response or "").strip()
+        raw_response = getattr(llm_output, "raw_response", "")
 
-        if not raw_response:
-            return "benign request"
-
-        else:
+        if not isinstance(raw_response, str) or not raw_response.strip():
             raise ValueError("Qwen returned empty reasoning response")
+
+        return raw_response.strip()
 
     def encode_reason(self, reason_text: str) -> np.ndarray:
         """

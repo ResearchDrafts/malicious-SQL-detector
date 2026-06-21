@@ -8,6 +8,7 @@ Analyze the prompt + SQL query using Qwen and return a structured LLMOutput.
 import json
 import re
 import torch
+import json_repair
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from schemas import LLM_output
@@ -212,7 +213,20 @@ Return valid JSON only:
         if match:
             cleaned = match.group(0)
 
-        data = json.loads(cleaned)
+        try:
+            data = json.loads(cleaned)
+        except json.JSONDecodeError as original_error:
+            try:
+                data = json_repair.loads(cleaned)
+            except Exception:
+                raise original_error
+
+        if not isinstance(data, dict):
+            raise json.JSONDecodeError(
+                "Qwen response did not contain a JSON object",
+                cleaned,
+                0,
+            )
 
         malicious = bool(data.get("malicious", False))
         malicious_reason = data.get("malicious_reason") or "benign request"

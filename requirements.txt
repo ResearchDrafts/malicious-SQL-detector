@@ -7,6 +7,7 @@ transformers>=4.51.0
 sentence-transformers>=3.0
 accelerate>=0.30
 bitsandbytes>=0.43
+json-repair>=0.58
 peft>=0.13
 sqlparse>=0.5.1
 scikit-learn>=1.5

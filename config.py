@@ -12,12 +12,17 @@ QWEN_ENABLE_THINKING = False
 # automatically disabled when CUDA is unavailable.
 QWEN_LOAD_IN_4BIT = True
 QWEN_GENERATION_KWARGS = {
-    "do_sample": False,
+    "do_sample": True,
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 20,
+    "min_new_tokens": 32,
 }
 
 '''
 for codebert.py
 '''
+# changed this to my google colab path
 UNIXCODER_PATH="./artifacts/unixcoder"
 DEVICE="cuda" if torch.cuda.is_available() else "cpu"
 MAX_SQL_LENGTH=512
