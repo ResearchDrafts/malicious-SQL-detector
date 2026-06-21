@@ -41,14 +41,13 @@ MINILM_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 '''
 for text_to_sql.py
 '''
-LLAMA_BASE_MODEL = "meta-llama/Llama-3.2-3B-Instruct"
-LLAMA_ADAPTER_PATH = "./artifacts/llama_adapter"
+TEXT_TO_SQL_MODEL_NAME = "Qwen/Qwen3-4B"
 TEXT_TO_SQL_MAX_LENGTH = 512
+TEXT_TO_SQL_ENABLE_THINKING = False
+TEXT_TO_SQL_LOAD_IN_4BIT = True
 TEXT_TO_SQL_GENERATION_KWARGS = {
     "max_new_tokens": 256,
-    "temperature": 0.1,
-    "top_p": 0.95,
-    "do_sample": True,
+    "do_sample": False,
 }
 
 '''
@@ -93,6 +92,13 @@ def validate_config(*, require_classifier: bool = False) -> None:
         raise ValueError("QWEN_MODEL_NAME must identify a Hugging Face model.")
     if not isinstance(QWEN_MAX_NEW_TOKENS, int) or QWEN_MAX_NEW_TOKENS <= 0:
         raise ValueError("QWEN_MAX_NEW_TOKENS must be a positive integer.")
+
+    if not TEXT_TO_SQL_MODEL_NAME:
+        raise ValueError(
+            "TEXT_TO_SQL_MODEL_NAME must identify a Hugging Face model."
+        )
+    if not isinstance(TEXT_TO_SQL_MAX_LENGTH, int) or TEXT_TO_SQL_MAX_LENGTH <= 0:
+        raise ValueError("TEXT_TO_SQL_MAX_LENGTH must be a positive integer.")
 
     if require_classifier:
         if not FINAL_CLASSIFIER_PATH:

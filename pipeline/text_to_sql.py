@@ -1,213 +1,138 @@
-"""
-Text-to-SQL generation using fine-tuned LLaMA 3.2 adapter with PEFT.
-Loads locally saved adapter weights and generates SQL from natural language prompts.
-"""
+"""Prompt-to-SQL generation using Qwen3-4B."""
 
 from __future__ import annotations
+
+import re
+
+import sqlparse
 import torch
-from peft import AutoPeftModelForCausalLM
-from transformers import AutoTokenizer, GenerationConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+from config import (
+    TEXT_TO_SQL_ENABLE_THINKING,
+    TEXT_TO_SQL_GENERATION_KWARGS,
+    TEXT_TO_SQL_LOAD_IN_4BIT,
+    TEXT_TO_SQL_MAX_LENGTH,
+    TEXT_TO_SQL_MODEL_NAME,
+)
 from schemas import input_prompt, sql_result
-from config import DEVICE, LLAMA_BASE_MODEL, LLAMA_ADAPTER_PATH, TEXT_TO_SQL_MAX_LENGTH, TEXT_TO_SQL_GENERATION_KWARGS
+
+
+SYSTEM_PROMPT = (
+    "You are a Text-to-SQL assistant. Convert the user's request into exactly "
+    "one SQL statement. Return only the SQL statement, with no markdown, "
+    "explanation, commentary, or additional statements."
+)
 
 
 class TextToSQLGenerator:
-    """
-    Generates SQL queries from natural language prompts using a fine-tuned
-    LLaMA 3.2 model with PEFT (Parameter-Efficient Fine-Tuning) adapter.
-
-    The adapter weights are loaded from a local directory (LLAMA_ADAPTER_PATH).
-    """
+    """Generate one SQL statement from a natural-language prompt using Qwen."""
 
     def __init__(self) -> None:
-        """
-        Initialize the TextToSQLGenerator by loading the base model,
-        PEFT adapter, and tokenizer.
+        self.tokenizer = AutoTokenizer.from_pretrained(TEXT_TO_SQL_MODEL_NAME)
 
-        Raises:
-            RuntimeError: if the model or adapter cannot be loaded.
-        """
-        self.device = torch.device(DEVICE if DEVICE else "cpu")
-        self._load_model()
-        self._load_tokenizer()
-
-    def _load_model(self) -> None:
-        """
-        Load the base LLaMA model with the PEFT adapter from local storage.
-        """
-        try:
-            self.model = AutoPeftModelForCausalLM.from_pretrained(
-                LLAMA_ADAPTER_PATH,
-                device_map="auto",
-                torch_dtype=torch.float16 if self.device.type == "cuda" else torch.float32,
+        model_kwargs = {
+            "device_map": "auto",
+            "torch_dtype": "auto",
+            "low_cpu_mem_usage": True,
+        }
+        if TEXT_TO_SQL_LOAD_IN_4BIT and torch.cuda.is_available():
+            compute_dtype = (
+                torch.bfloat16
+                if torch.cuda.is_bf16_supported()
+                else torch.float16
             )
-            self.model = self.model.merge_and_unload()
-            self.model.to(self.device)
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=compute_dtype,
+            )
+
+        try:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                TEXT_TO_SQL_MODEL_NAME,
+                **model_kwargs,
+            )
             self.model.eval()
         except Exception as exc:
             raise RuntimeError(
-                f"Failed to load LLaMA adapter from '{LLAMA_ADAPTER_PATH}': {exc}"
-            ) from exc
-
-    def _load_tokenizer(self) -> None:
-        """
-        Load the tokenizer for the base LLaMA model.
-        """
-        try:
-            self.tokenizer = AutoTokenizer.from_pretrained(LLAMA_BASE_MODEL)
-        except Exception as exc:
-            raise RuntimeError(
-                f"Failed to load tokenizer for '{LLAMA_BASE_MODEL}': {exc}"
+                f"Failed to load Text-to-SQL model "
+                f"'{TEXT_TO_SQL_MODEL_NAME}': {exc}"
             ) from exc
 
     def preprocess_prompt(self, prompt: str) -> str:
-        """
-        Format the user prompt into a structured instruction for SQL generation.
-
-        Args:
-            prompt: Raw natural language query.
-
-        Returns:
-            Formatted instruction string.
-        """
-        if not prompt:
+        """Apply Qwen's chat template to a prompt."""
+        if not prompt or not prompt.strip():
             return ""
 
-        system_instruction = (
-            "You are a SQL expert. Generate a SQL query based on the user's request. "
-            "Return ONLY the SQL query, no explanation.\n\n"
-            "User request: "
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt.strip()},
+        ]
+        return self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=TEXT_TO_SQL_ENABLE_THINKING,
         )
-        return system_instruction + prompt.strip()
 
     def tokenize(self, text: str) -> dict[str, torch.Tensor]:
-        """
-        Tokenize input text using the LLaMA tokenizer.
-
-        Args:
-            text: Preprocessed instruction text.
-
-        Returns:
-            Dictionary of tokenized tensors moved to device.
-        """
+        """Tokenize a chat-formatted prompt on the model's input device."""
         encoded = self.tokenizer(
             text,
             truncation=True,
-            padding=False,
             max_length=TEXT_TO_SQL_MAX_LENGTH,
             return_tensors="pt",
         )
-        encoded = {key: tensor.to(self.device) for key, tensor in encoded.items()}
-        return encoded
+        return encoded.to(self.model.device)
 
     def generate(self, inputs: dict[str, torch.Tensor]) -> str:
-        """
-        Run the model's generation pipeline and extract the SQL query.
+        """Generate and decode only tokens produced after the input prompt."""
+        generation_kwargs = dict(TEXT_TO_SQL_GENERATION_KWARGS)
+        generation_kwargs["pad_token_id"] = self.tokenizer.eos_token_id
 
-        Args:
-            inputs: Tokenized input tensors from tokenize().
-
-        Returns:
-            Generated SQL query string.
-        """
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                **TEXT_TO_SQL_GENERATION_KWARGS,
+                **generation_kwargs,
             )
 
-        generated_text = self.tokenizer.decode(
-            outputs[0],
+        input_length = inputs["input_ids"].shape[1]
+        output_ids = outputs[0, input_length:]
+        return self.tokenizer.decode(
+            output_ids,
             skip_special_tokens=True,
-        )
-
-        return generated_text
+        ).strip()
 
     def extract_sql(self, generated_text: str, original_prompt: str) -> str:
-        """
-        Extract the SQL query portion from the generated text.
+        """Remove formatting and retain only the first generated statement."""
+        del original_prompt
 
-        Removes prompt echoes, markdown formatting, and common explanatory
-        text while preserving the generated SQL statements.
+        cleaned = re.sub(
+            r"<think>.*?</think>",
+            "",
+            generated_text,
+            flags=re.DOTALL,
+        ).strip()
+        cleaned = re.sub(r"```(?:sql)?|```", "", cleaned, flags=re.IGNORECASE)
+        cleaned = cleaned.strip()
 
-        Args:
-            generated_text: Full text output from generate().
-            original_prompt: Original user prompt for context.
-
-        Returns:
-            Extracted SQL query string.
-        """
-
-        instruction = (
-            "You are a SQL expert. Generate a SQL query based on the user's request. "
-            "Return ONLY the SQL query, no explanation.\n\n"
-            "User request: "
-        )
-
-        # Remove instruction if model echoed it back
-        if instruction in generated_text:
-            idx = generated_text.find(instruction) + len(instruction)
-            sql_part = generated_text[idx:].strip()
-        else:
-            sql_part = generated_text.strip()
-
-        # Remove prompt echo if present
-        sql_part = sql_part.replace(original_prompt, "").strip()
-
-        # Remove markdown fences
-        sql_part = sql_part.replace("```sql", "")
-        sql_part = sql_part.replace("```SQL", "")
-        sql_part = sql_part.replace("```", "")
-        sql_part = sql_part.strip()
-
-        cleaned_lines = []
-
-        stop_phrases = (
-            "this query",
-            "the query",
-            "explanation",
-            "note:",
-            "here is",
-            "sql query:",
-            "query:",
-        )
-
-        for line in sql_part.splitlines():
-            line = line.strip()
-
-            if not line:
-                continue
-
-            if line.lower().startswith(stop_phrases):
-                break
-
-            cleaned_lines.append(line)
-
-        sql_query = " ".join(cleaned_lines).strip()
-
-        return sql_query
+        statements = [statement.strip() for statement in sqlparse.split(cleaned)]
+        statements = [statement for statement in statements if statement]
+        return statements[0] if statements else ""
 
     def generate_sql(self, prompt: input_prompt) -> sql_result:
-        """
-        Run the full pipeline to generate a SQL query from a user prompt.
-
-        Pipeline: preprocess_prompt -> tokenize -> generate -> extract_sql
-
-        Args:
-            prompt: input_prompt containing the user's natural language request.
-
-        Returns:
-            sql_result with prompt and generated SQL query.
-
-        Raises:
-            ValueError: if the prompt is empty or invalid.
-        """
+        """Generate one non-empty SQL statement for an input prompt."""
         if not prompt.prompt or not prompt.prompt.strip():
             raise ValueError("Prompt cannot be empty")
 
-        formatted = self.preprocess_prompt(prompt.prompt)
-        inputs = self.tokenize(formatted)
+        formatted_prompt = self.preprocess_prompt(prompt.prompt)
+        inputs = self.tokenize(formatted_prompt)
         generated_text = self.generate(inputs)
         sql_query = self.extract_sql(generated_text, prompt.prompt)
+
+        if not sql_query:
+            raise ValueError("Qwen returned an empty SQL query")
 
         return sql_result(prompt=prompt.prompt, sql_query=sql_query)
