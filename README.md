@@ -1,5 +1,5 @@
-# FAP - Filter Adversarial Payloads
-FAP is a multilingual SQL security pipeline that converts natural-language
+# Malicious SQL Detector
+Malicious SQL Detector is a multilingual SQL security pipeline that converts natural-language
 prompts into SQL and classifies the generated SQL as benign or malicious.
 Supported input categories include English, Hindi, and Hinglish prompts.
 
